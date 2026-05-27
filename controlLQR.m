@@ -17,13 +17,10 @@ dy_p = -diff(th, t)*sin(th)*l;
 E_kin_p = (1/2)*(I_p*diff(th, t)^2 + m_p*dx_p^2 + m_p*dy_p^2);
 
 E_kin = (E_kin_c + E_kin_r + E_kin_p);
-% E_kin = (E_kin_c + E_kin_r);
 
 E_pot_r = m_r*g*cos(th)*l/2;
 E_pot_p = m_p*g*cos(th)*l;
 E_pot = (E_pot_p + E_pot_r);
-% E_pot = (E_pot_r);
-
 
 L = simplify(E_kin - E_pot);
 
@@ -59,96 +56,59 @@ D = [0; 0];
 sys = ss(A_num, B_num, C, D);
 
 % LQR
-Q = diag([10000 1 5 1]);
-R = 5;
+% Bryson's Rule
+x_max     = 0.5;      
+dx_max    = 2;         
+th_max    = 10*pi/180;  
+dth_max   = 2;         
+u_max     = 14.4;        
+
+Q = diag([ ...
+    1/x_max^2,...
+    1/dx_max^2,...
+    1/th_max^2,...
+    1/dth_max^2]);
+
+
+
+R = 1/u_max^2;
 
 K = lqr(A_num,B_num,Q,R)
 
 
-%% Reference tracking (From 0.5m to 0m)
-C_ref = [1 0 0 0]; % Focus on cart position
+% Focus on cart position
+C_ref = [1 0 0 0]; 
 Nbar = -inv(C_ref*inv(A_num - B_num*K)*B_num);
 
 % Define the system
 sys_cl = ss(A_num - B_num*K, B_num*Nbar, C, D);
 
-% 1. Change the Reference (Target) to 0
-t = 0:0.01:2; 
+% step response
+step(sys_cl)
+
+%% Reference tracking (From 0.5m to 0m)
+% Change the Reference (Target) to 0
+t = 0:0.01:5; 
 r = 0 * ones(size(t)); % Target position is 0m
 
-% 2. Set Initial Conditions [x; dx; th; dth]
+% Set Initial Conditions [x; dx; th; dth]
 % We start at x = 0.5, all other states (velocity/angle) are 0
 x0 = [0.5; 0; 0; 0]; 
 
-% 3. Run simulation with initial condition x0
+% Run simulation with initial condition x0
 [y, t, x_states] = lsim(sys_cl, r, t, x0);
 
 % Plotting the result
 figure
 plot(t, y(:,1), 'LineWidth', 2)
 ylabel('Position (m)')
+xlabel('Time (s)')
 title('Cart Moving from 0.5m to 0m')
 grid on
-hold on;
 
+figure
 plot(t, y(:,2), 'LineWidth', 2)
 ylabel('Angle (rad)')
 xlabel('Time (s)')
 title('Pendulum Response')
-grid on
-
-%% Reference tracking WITH Controller Noise
-C_ref = C(1,:);
-Nbar = -inv(C_ref*inv(A_num - B_num*K)*B_num);
-
-% Create noise signal
-t = 0:0.01:50;
-noise_magnitude = 0.5; % Tweak this to make the noise stronger/weaker
-noise = noise_magnitude * randn(length(t), 1); % normally distributed random noise
-
-% Create reference signal
-r = 0.2 * ones(length(t), 1); % 20 cm step
-
-% Augment the System to accept two inputs: [r, noise]
-% The new B matrix handles B*Nbar*r and B*noise
-B_aug = [B_num*Nbar, B_num]; 
-D_aug = [D, D]; 
-
-sys_cl_noisy = ss(A_num - B_num*K, B_aug, C, D_aug);
-
-% Combine inputs into a two-column matrix
-% Column 1: reference, Column 2: noise
-inputs = [r, noise];
-
-% Simulate
-[y, t, x] = lsim(sys_cl_noisy, inputs, t);
-
-% Compute noisy control force u(t) applied to the plant
-u_actual = zeros(length(t), 1);
-for i = 1:length(t)
-    % u = -Kx + Nbar*r + noise
-    u_actual(i) = -K * x(i,:)' + Nbar * r(i) + noise(i); 
-end
-
-% plot
-figure
-subplot(3,1,1)
-plot(t, y(:,1), 'LineWidth', 2)
-xlabel('Tid (s)')
-ylabel('Position (m)')
-title('Cart Position (with noisy controller)')
-grid on
-
-subplot(3,1,2)
-plot(t, y(:,2), 'LineWidth', 2) 
-xlabel('Tid (s)')
-ylabel('Angle (rad)')
-title('Pendulum Angle')
-grid on
-
-subplot(3,1,3)
-plot(t, u_actual, 'r', 'LineWidth', 1)
-xlabel('Tid (s)')
-ylabel('Force (N)')
-title('Actual Noisy Control Signal (u)')
 grid on
